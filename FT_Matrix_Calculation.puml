@@ -1,0 +1,29 @@
+@startuml
+start
+:power cycle or reset;
+partition Begin \
+{
+    repeat
+        repeat
+            :select calibration from 0 to 15;
+            backward:receives bit 6 (bad calibration);
+        repeat while (valid calibration) is (false)
+        ->true;
+        :receives calibration selected;
+    repeat while (received calibration is the same as configured) is (false)
+    ->true;
+    :**read calibration matrix**;
+    if (firmware > 3.7) then (true)
+        :read counts per force;
+        :read counts per torque;
+    else (false)
+        :counts per force is 1000000;
+        :counts per torque is 1000000;
+    endif
+}
+repeat
+    :read SG Data;
+repeat while (active) is (true)
+->false;
+stop
+@enduml
