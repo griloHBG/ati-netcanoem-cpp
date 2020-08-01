@@ -1,0 +1,186 @@
+<AtiInterfaceRoot@BoxLayout>:
+    serial_number: serial_number
+    firmware_version: firmware_version
+    counts_per_force: counts_per_force
+    counts_per_torque: counts_per_torque
+    force_unit: force_unit
+    torque_unit: torque_unit
+    connected_toggle_button:connected_toggle_button
+    graph_fx: graph_fx
+    graph_fy: graph_fy
+    graph_fz: graph_fz
+    graph_tx: graph_tx
+    graph_ty: graph_ty
+    graph_tz: graph_tz
+    try_connection_btn: try_connection_btn
+
+    orientation: 'horizontal'
+    spacing:10
+    BoxLayout:
+        orientation: 'vertical'
+        spacing:10
+        size_hint_x: .2
+        GridLayout:
+            cols: 1
+            padding:10
+            spacing:10
+            BoxLayout:
+                orientation:'horizontal'
+                spacing: 10
+
+                GridLayout:
+                    cols:2
+                    spacing: 10
+                    Label:
+                        text: 'IP'
+                        size_hint_x: .5
+                    TextInput:
+                        id: ip
+                        text: root.ip
+                    Label:
+                        text: 'Port'
+                        size_hint_x: .5
+                    TextInput:
+                        id: port
+                        text: str(root.port)
+                ToggleButton:
+                    id: connected_toggle_button
+                    text: 'Disconnected'
+                    disabled: 'True'
+                    state: 'normal' # 'normal' or 'down'
+                    halign: 'center'
+                    size_hint_x: .5
+            Label:
+                id: connection_status
+                text: root.connection_status_text
+            Button:
+                id: try_connection_btn
+                text: root.try_connection_btn_text
+                size_hint_y: .5
+                on_press: root.setup_connection(self)
+            LabelText:
+                id: serial_number
+                name: 'Serial number'
+                value: 'A'
+            LabelText:
+                id: firmware_version
+                name: 'Firmware version'
+                value: 'B'
+            LabelText:
+                id: counts_per_force
+                name: 'Counts per force'
+                value: 'C'
+            LabelText:
+                id: counts_per_torque
+                name: 'Counts per torque'
+                value: 'D'
+            LabelText:
+                id: force_unit
+                name: 'Force unit'
+                value: 'E'
+            LabelText:
+                id: torque_unit
+                name: 'Torque unit'
+                value: 'F'
+    BoxLayout:
+        orientation:'vertical'
+        Graph:
+            id: graph_fx
+            text: 'Fx'
+        Graph
+            id: graph_fy
+            text: 'Fy'
+        Graph
+            id: graph_fz
+            text: 'Fz'
+        Graph
+            id: graph_tx
+            text: 'Tx'
+        Graph
+            id: graph_ty
+            text: 'Ty'
+        Graph
+            id: graph_tz
+            text: 'Tz'
+    BoxLayout:
+        orientation:'vertical'
+        size_hint_x:.2
+        spacing:10
+        LEDVisualizer:
+            id: b00WatchDogReset
+			text: 'b00WatchDogReset'
+            status: 'normal' if root.status_dict['b00WatchDogReset'] == False else 'down'
+            disabled: True
+        LEDVisualizer:
+            id: b01DAC_ADC_tooHigh
+			text: 'b01DAC_ADC_tooHigh'
+            status: 'normal' if root.status_dict['b01DAC_ADC_tooHigh'] == False else 'down'
+            disabled: True
+        LEDVisualizer:
+            id: b02DAC_ADC_tooLow
+			text: 'b02DAC_ADC_tooLow'
+            status: 'normal' if root.status_dict['b02DAC_ADC_tooLow'] == False else 'down'
+            disabled: True
+		LEDVisualizer:
+            id: b03ArtificialAnalogGroundOutOfRange
+			text: 'b03ArtificialAnalogGroundOutOfRange'
+            status: 'normal' if root.status_dict['b03ArtificialAnalogGroundOutOfRange'] == False else 'down'
+            disabled: True
+		LEDVisualizer:
+            id: b04PowerSupplyHigh
+			text: 'b04PowerSupplyHigh'
+            status: 'normal' if root.status_dict['b04PowerSupplyHigh'] == False else 'down'
+            disabled: True
+		LEDVisualizer:
+            id: b05PowerSupplyLow
+			text: 'b05PowerSupplyLow'
+            status: 'normal' if root.status_dict['b05PowerSupplyLow'] == False else 'down'
+            disabled: True
+		LEDVisualizer:
+            id: b06BadActiveCalibration
+			text: 'b06BadActiveCalibration'
+            status: 'normal' if root.status_dict['b06BadActiveCalibration'] == False else 'down'
+            disabled: True
+		LEDVisualizer:
+            id: b07EEPROMFailure
+			text: 'b07EEPROMFailure'
+            status: 'normal' if root.status_dict['b07EEPROMFailure'] == False else 'down'
+            disabled: True
+		LEDVisualizer:
+            id: b08ConfigurationInvalid
+			text: 'b08ConfigurationInvalid'
+            status: 'normal' if root.status_dict['b08ConfigurationInvalid'] == False else 'down'
+            disabled: True
+		LEDVisualizer:
+            id: b11SensorTempHigh
+			text: 'b11SensorTempHigh'
+            status: 'normal' if root.status_dict['b11SensorTempHigh'] == False else 'down'
+            disabled: True
+		LEDVisualizer:
+            id: b12SensorTempLow
+			text: 'b12SensorTempLow'
+            status: 'normal' if root.status_dict['b12SensorTempLow'] == False else 'down'
+            disabled: True
+		LEDVisualizer:
+            id: b14CANBusError
+			text: 'b14CANBusError'
+            status: 'normal' if root.status_dict['b14CANBusError'] == False else 'down'
+            disabled: True
+		LEDVisualizer:
+            id: b15AnyError
+			text: 'b15AnyError'
+            status: 'normal' if root.status_dict['b15AnyError'] == False else 'down'
+            disabled: True
+
+<LabelText@BoxLayout>:
+    orientation: 'horizontal'
+    name: 'name'
+    value: 'value'
+    Label:
+        text: root.name
+        valign: 'middle'
+    Label
+        text: root.value
+        valign: 'middle'
+
+<LEDVisualizer@ToggleButton>:

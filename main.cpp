@@ -3,7 +3,6 @@
 #include <sys/ioctl.h>
 #include <net/if.h>
 
-#include <string>
 #include <cstring>
 #include <iostream>
 #include <unistd.h>
@@ -12,12 +11,14 @@
 #include <array>
 #include <tuple>
 #include <iomanip>
-#include <algorithm>
+#include <csignal>
 
 #include <netinet/in.h>
 #include <arpa/inet.h>
 
 #include <json.hpp>
+
+#include <cstdlib>
 
 using json = nlohmann::json;
 
@@ -349,9 +350,9 @@ public:
         //Bit 10
         //bool Reserved;
         ///Bit 11 - Critical
-        bool b11SensroTempHigh;
+        bool b11SensorTempHigh;
         ///Bit 12 - Critical
-        bool b12SensroTempLow;
+        bool b12SensorTempLow;
         //Bit 13
         //bool Reserved;
         ///Bit 14
@@ -543,9 +544,34 @@ std::array<float, 6> multiply(const std::array<std::array<float, 6>, 6>& matrix,
     return ret;
 }
 
-int main()
+int keepRunning = 1;
+
+void intHandler(int dummy) {
+    keepRunning = 0;
+}
+
+int main(int argc, char* argv[])
 {
     
+    bool printAll = false;
+    bool waitForGUIConnection = true;
+    
+    int c;
+    
+    while( ( c = getopt (argc, argv, "p:g:") ) != -1 )
+    {
+        switch(c)
+        {
+            case 'n':
+                printAll = true;
+                break;
+            case 't':
+                waitForGUIConnection = true;
+                break;
+        }
+    }
+    
+    signal(SIGINT, intHandler);
     
     int socketCan;
     
@@ -743,7 +769,7 @@ int main()
     std::cout << matrix << std::endl;
     
     
-    int sockfd;
+    int sockUDPCommunication;
     
     char recvMessage[1024];
     int maxBufferSize = 1024;
@@ -751,10 +777,13 @@ int main()
     struct sockaddr_in serverAddr, clientAddr;
     
     // Creating socket file descriptor
-    if ( (sockfd = socket(AF_INET, SOCK_DGRAM, 0)) < 0 ) {
+    if ((sockUDPCommunication = socket(AF_INET, SOCK_DGRAM, 0)) < 0 ) {
         perror("socket creation failed");
         exit(EXIT_FAILURE);
     }
+    int option = 1;
+    
+    setsockopt(sockUDPCommunication, SOL_SOCKET, (SO_REUSEADDR|SO_REUSEPORT), (char*)&option, sizeof(option));
     
     memset(&serverAddr, 0, sizeof(serverAddr));
     memset(&clientAddr, 0, sizeof(clientAddr));
@@ -764,7 +793,7 @@ int main()
     serverAddr.sin_addr.s_addr = INADDR_ANY;
     serverAddr.sin_port = htons(8080);
     
-    if ( bind(sockfd, (const struct sockaddr *)&serverAddr,
+    if ( bind(sockUDPCommunication, (const struct sockaddr *)&serverAddr,
               sizeof(serverAddr)) < 0 )
     {
         perror("bind failed");
@@ -780,24 +809,24 @@ int main()
     
     std::cout << "Server accepting " << inet_ntoa(serverAddr.sin_addr) << " at port " << htons(serverAddr.sin_port) << " waiting connection from client GUI interface." << std::endl << std::endl;
     
-    do
-    {
-        n = recvfrom(sockfd, recvMessage, maxBufferSize,
-                     MSG_WAITALL, (struct sockaddr *) &clientAddr,
-                     reinterpret_cast<socklen_t *>(&len));
+//    do
+//    {
+//        n = recvfrom(sockUDPCommunication, recvMessage, maxBufferSize,
+//                     MSG_WAITALL, (struct sockaddr *) &clientAddr,
+//                     reinterpret_cast<socklen_t *>(&len));
+//
+//        recvMessage[n] = '\0';
+//
+//        ok = strcmp(recvMessage, "hello ati-netcanoem") == 0;
+//
+//        if(!ok)
+//        {
+//            std::cout << "wrong hand-shake from client!" << std::endl;
+//        }
+//    }
+//    while(!ok);
     
-        recvMessage[n] = '\0';
-    
-        ok = strcmp(recvMessage, "hello ati-netcanoem") == 0;
-        
-        if(!ok)
-        {
-            std::cout << "wrong hand-shake from client!" << std::endl;
-        }
-    }
-    while(!ok);
-    
-    std::cout << "Client (" << inet_ntoa(clientAddr.sin_addr) << ", port " << htons(clientAddr.sin_port) << ") GUI interface is connected." << std::endl << std::endl;
+    //std::cout << "Client (" << inet_ntoa(clientAddr.sin_addr) << ", port " << htons(clientAddr.sin_port) << ") GUI interface is connected." << std::endl << std::endl;
     
     json sensorInfoJson;
     
@@ -813,7 +842,7 @@ int main()
     char sendMessage[1024];
     strcpy(sendMessage, sensorInfoJson.dump().c_str());
     
-    sendto(sockfd, (const char *)sendMessage, strlen(sendMessage), MSG_CONFIRM, (const struct sockaddr *) &clientAddr, len);
+    sendto(sockUDPCommunication, (const char *)sendMessage, strlen(sendMessage), MSG_CONFIRM, (const struct sockaddr *) &clientAddr, len);
     
     
     std::array<int16_t, 6> sg{};
@@ -828,7 +857,15 @@ int main()
     
     NetCANOEMCANMsg::Status sensorStatus{};
     
-    while(SGcount < 100)
+    
+    /*begin select setup*/
+    
+    fd_set rfds;
+    TimeVal tv;
+    int retval;
+    /*end select setup*/
+    
+    while(keepRunning == 1)
     {
     
         canFrame = helper.getCANFrameRequest(NetCANOEMCANMsg::OpCode::SGData_req);
@@ -840,7 +877,6 @@ int main()
         std::tie(sg[0], sg[2], sg[4]) = helper.toSGData<int16_t>(canFrame);
         
         sensorStatus = helper.toStatus(canFrame);
-        std::cout << "\t\t\t\t" << (int)canFrame.data[0] << " | " << (int)canFrame.data[1] << std::endl;
         
         read(socketCan, &canFrame, sizeof(canFrame));
     
@@ -863,8 +899,8 @@ int main()
                                  sensorStatus.b06BadActiveCalibration,
                                  sensorStatus.b07EEPROMFailure,
                                  sensorStatus.b08ConfigurationInvalid,
-                                 sensorStatus.b11SensroTempHigh,
-                                 sensorStatus.b12SensroTempLow,
+                                 sensorStatus.b11SensorTempHigh,
+                                 sensorStatus.b12SensorTempLow,
                                  sensorStatus.b14CANBusError,
                                  sensorStatus.b15AnyError};
         
@@ -875,54 +911,51 @@ int main()
         
         strcpy(sendMessage, ftDataJson.dump().c_str());
         
-        sendto(sockfd, (const char *)sendMessage, strlen(sendMessage), MSG_CONFIRM, (const struct sockaddr *) &clientAddr, len);
+        sendto(sockUDPCommunication, (const char *)sendMessage, strlen(sendMessage), MSG_CONFIRM, (const struct sockaddr *) &clientAddr, len);
+    
+        /* Watch socketCAN's fd to see when it has input. */
+        FD_ZERO(&rfds);
+        FD_SET(sockUDPCommunication, &rfds);
+    
+        /* Wait no seconds! */
+        tv.tv_sec = 0;
+        tv.tv_usec = 10000;
         
-        usleep(100000);
+//        retval = select(sockUDPCommunication+1, &rfds, NULL, NULL, &tv);
+//        /* Don't rely on the value of tv now! */
+//
+//        if (retval == -1)
+//        {
+//            perror("select()");
+//        }
+//        else if (retval)
+//        {
+//            n = recvfrom(sockUDPCommunication, recvMessage, maxBufferSize,
+//                         MSG_WAITALL, (struct sockaddr *) &clientAddr,
+//                         reinterpret_cast<socklen_t *>(&len));
+//
+//            recvMessage[n] = '\0';
+//
+//            keepRunning = !(strcmp(recvMessage, "end UDP communication") == 0);
+//            std::cout << "estou saindo!" << std::endl;
+//        }
+        
+        usleep(10000);
         
         SGcount++;
     }
+    
+    std::cout << "sai do loop!" << std::endl;
     
     ftDataJson["Last_message"] = "True";
     
     strcpy(sendMessage, ftDataJson.dump().c_str());
     
-    sendto(sockfd, (const char *)sendMessage, strlen(sendMessage), MSG_CONFIRM, (const struct sockaddr *) &clientAddr, len);
+    sendto(sockUDPCommunication, (const char *)sendMessage, strlen(sendMessage), MSG_CONFIRM, (const struct sockaddr *) &clientAddr, len);
     
     //TODO create a bias?!
     
-    
-    
-    fd_set rfds;
-    TimeVal tv;
-    int retval;
-    
-    /* Watch stdin (fd 0) to see when it has input. */
-    FD_ZERO(&rfds);
-    FD_SET(socketCan, &rfds);
-
-    /* Wait up to five seconds. */
-    tv.tv_sec = 1;
-    tv.tv_usec = 0;
-
-    retval = select(socketCan+1, &rfds, NULL, NULL, &tv);
-    /* Don't rely on the value of tv now! */
-
-    if (retval == -1)
-    {
-        perror("select()");
-    }
-    else if (retval)
-    {
-        std::cout << "Data is available now." << std::endl;
-        /* FD_ISSET(0, &rfds) will be true. */
-        printCANFrame(&canFrame);
-    }
-    else
-    {
-        std::cout << "No data within five seconds." << std::endl;
-    }
-    
-    
+    std::cout << "fim!" << std::endl;
     
     return 0;
 }
