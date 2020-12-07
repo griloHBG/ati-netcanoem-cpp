@@ -154,9 +154,13 @@ class AtiInterfaceRoot(BoxLayout):
             g.add_plot(LinePlot())
 
     def graph_update(self, dt):
-        msgFromServer = self.UDPClientSocket.recvfrom(self.bufferSize)
+        try:
+            msgFromServer = self.UDPClientSocket.recvfrom(self.bufferSize)
+        except:
+            return
         msgJson = json.loads(msgFromServer[0])
         if msgJson['Type'] == 'status_force_torque':
+            print("new message")
             for g, ft_point_pair, ft_value in zip(self.graphs,self.ft_array_point_pair, msgJson['FT']):
                 ft_point_pair.append([self.current_time, ft_value])
                 g.ymin = min(g.ymin, float(ft_point_pair[-1][1]))
@@ -165,6 +169,7 @@ class AtiInterfaceRoot(BoxLayout):
                 g.xmin = g.xmax - self.circularBufferSize
                 p = g.plots[0]
                 p.points = list(ft_point_pair.to_numpy()) #TODO: resolve warning from here (it appears when len(p.points) > self.circularBufferSize)
+            #print("id: {}".format(msgJson['SGcount']))
 
             for i, key in enumerate(self.status_dict.keys()):
                 if msgJson['Status'][i] == 'True':
@@ -205,6 +210,7 @@ class AtiInterfaceRoot(BoxLayout):
 
             # Create a UDP socket at client side
             self.UDPClientSocket = socket.socket(family=socket.AF_INET, type=socket.SOCK_DGRAM)
+            self.UDPClientSocket.settimeout(0) # non blocking!
 
             inputs = [self.UDPClientSocket]
             outputs = []
@@ -243,7 +249,7 @@ class AtiInterfaceRoot(BoxLayout):
 
                         self.is_connected = True
 
-                        self.graph_update_evet = Clock.schedule_interval(self.graph_update, 0.001)
+                        self.graph_update_evet = Clock.schedule_interval(self.graph_update, 0.01)
                 except:
                    self.connection_failures += 1
                    self.ids.connection_status.text = "Couldn't connect ({})".format(self.connection_failures)

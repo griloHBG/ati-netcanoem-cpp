@@ -20,6 +20,8 @@
 
 #include <cstdlib>
 
+#define CONNECT_TO_KIVY_INTERFACE
+
 using json = nlohmann::json;
 
 typedef struct can_frame CANframe;
@@ -808,25 +810,26 @@ int main(int argc, char* argv[])
     
     
     std::cout << "Server accepting " << inet_ntoa(serverAddr.sin_addr) << " at port " << htons(serverAddr.sin_port) << " waiting connection from client GUI interface." << std::endl << std::endl;
+#ifdef CONNECT_TO_KIVY_INTERFACE
+    do
+    {
+        n = recvfrom(sockUDPCommunication, recvMessage, maxBufferSize,
+                     MSG_WAITALL, (struct sockaddr *) &clientAddr,
+                     reinterpret_cast<socklen_t *>(&len));
+
+        recvMessage[n] = '\0';
+
+        ok = strcmp(recvMessage, "hello ati-netcanoem") == 0;
+
+        if(!ok)
+        {
+            std::cout << "wrong hand-shake from client!" << std::endl;
+        }
+    }
+    while(!ok);
     
-//    do
-//    {
-//        n = recvfrom(sockUDPCommunication, recvMessage, maxBufferSize,
-//                     MSG_WAITALL, (struct sockaddr *) &clientAddr,
-//                     reinterpret_cast<socklen_t *>(&len));
-//
-//        recvMessage[n] = '\0';
-//
-//        ok = strcmp(recvMessage, "hello ati-netcanoem") == 0;
-//
-//        if(!ok)
-//        {
-//            std::cout << "wrong hand-shake from client!" << std::endl;
-//        }
-//    }
-//    while(!ok);
-    
-    //std::cout << "Client (" << inet_ntoa(clientAddr.sin_addr) << ", port " << htons(clientAddr.sin_port) << ") GUI interface is connected." << std::endl << std::endl;
+    std::cout << "Client (" << inet_ntoa(clientAddr.sin_addr) << ", port " << htons(clientAddr.sin_port) << ") GUI interface is connected." << std::endl << std::endl;
+#endif
     
     json sensorInfoJson;
     
@@ -850,10 +853,13 @@ int main(int argc, char* argv[])
     
     int SGcount = 0;
     
+    
+    
     json ftDataJson;
     ftDataJson["Type"] = "status_force_torque";
     ftDataJson["Status"] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
     ftDataJson["Last_message"] = "False";
+    ftDataJson["SGcount"] =  SGcount;
     
     NetCANOEMCANMsg::Status sensorStatus{};
     
@@ -864,6 +870,8 @@ int main(int argc, char* argv[])
     TimeVal tv;
     int retval;
     /*end select setup*/
+    
+    int multiplier = 1000;
     
     while(keepRunning == 1)
     {
@@ -884,12 +892,17 @@ int main(int argc, char* argv[])
     
         ft = multiply(matrix, sg);
     
-        std::cout << "FT: ";
-        std::for_each(ft.begin(), ft.end(), [](const float& v) { std::cout << std::setw(10) << std::setprecision(3) << v; });
-        std::cout << "\t\tpower supply low: " << sensorStatus.b05PowerSupplyLow;
-        std::cout << std::endl;
-    
-        ftDataJson["FT"] = {ft[0], ft[1], ft[2], ft[3], ft[4], ft[5]};
+        //std::cout << "FT: ";
+        //std::for_each(ft.begin(), ft.end(), [](const float& v) { std::cout << std::setw(10) << std::setprecision(3) << v; });
+        //std::cout << "\t\tpower supply low: " << sensorStatus.b05PowerSupplyLow;
+        //std::cout << std::endl;
+        
+        ftDataJson["FT"] = {ft[0],
+                            ft[1],
+                            ft[2],
+                            ft[3],
+                            ft[4],
+                            ft[5]};
         ftDataJson["Status"] = { sensorStatus.b00WatchDogReset,
                                  sensorStatus.b01DAC_ADC_tooHigh,
                                  sensorStatus.b02DAC_ADC_tooLow,
@@ -903,6 +916,8 @@ int main(int argc, char* argv[])
                                  sensorStatus.b12SensorTempLow,
                                  sensorStatus.b14CANBusError,
                                  sensorStatus.b15AnyError};
+    
+        ftDataJson["SGcount"] =  SGcount;
         
         if(ftDataJson.dump().size() > maxBufferSize)
         {
@@ -919,26 +934,27 @@ int main(int argc, char* argv[])
     
         /* Wait no seconds! */
         tv.tv_sec = 0;
-        tv.tv_usec = 10000;
-        
-//        retval = select(sockUDPCommunication+1, &rfds, NULL, NULL, &tv);
-//        /* Don't rely on the value of tv now! */
-//
-//        if (retval == -1)
-//        {
-//            perror("select()");
-//        }
-//        else if (retval)
-//        {
-//            n = recvfrom(sockUDPCommunication, recvMessage, maxBufferSize,
-//                         MSG_WAITALL, (struct sockaddr *) &clientAddr,
-//                         reinterpret_cast<socklen_t *>(&len));
-//
-//            recvMessage[n] = '\0';
-//
-//            keepRunning = !(strcmp(recvMessage, "end UDP communication") == 0);
-//            std::cout << "estou saindo!" << std::endl;
-//        }
+        tv.tv_usec = 0;
+#ifdef CONNECT_TO_KIVY_INTERFACE
+        retval = select(sockUDPCommunication+1, &rfds, NULL, NULL, &tv);
+        /* Don't rely on the value of tv now! */
+
+        if (retval == -1)
+        {
+            perror("select()");
+        }
+        else if (retval)
+        {
+            n = recvfrom(sockUDPCommunication, recvMessage, maxBufferSize,
+                         MSG_WAITALL, (struct sockaddr *) &clientAddr,
+                         reinterpret_cast<socklen_t *>(&len));
+
+            recvMessage[n] = '\0';
+
+            keepRunning = strcmp(recvMessage, "end UDP communication") != 0;
+            std::cout << "estou saindo!" << std::endl;
+        }
+#endif
         
         usleep(10000);
         
