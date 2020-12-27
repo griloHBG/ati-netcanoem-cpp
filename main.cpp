@@ -20,7 +20,7 @@
 
 #include <cstdlib>
 
-#define CONNECT_TO_KIVY_INTERFACE
+#undef CONNECT_TO_KIVY_INTERFACE
 
 using json = nlohmann::json;
 
@@ -114,7 +114,7 @@ public:
     /// 5      Yes           Power supply too low                        .
     /// 6      Yes           Bad active calibration                      .
     /// 7      Yes           EEPROM failure                              .
-    /// 8                    Caonfiguration invalid                      .
+    /// 8                    Configuration invalid                       .
     /// 9                    Reserved                                    .
     /// 10                   Reserved                                    .
     /// 11     Yes           Sensor temperature too high                 .
@@ -133,7 +133,7 @@ public:
         Tz = 0x5,
     };
     
-    explicit NetCANOEMCANMsg(uint16_t baseID = 0x20): _baseIDRaw(baseID), _baseIDForUse(baseID << 4u)
+    explicit NetCANOEMCANMsg(uint16_t baseID = 0x7F): _baseIDRaw(baseID), _baseIDForUse(baseID << 4u)
     {
     }
     
@@ -157,7 +157,7 @@ public:
     {
         CANframe canFrame = getCANFrameRequest(opCode);
         canFrame.can_dlc = 1;
-        canFrame.data[0] = axis;
+        canFrame.data[0] = (int)axis;
         
         return canFrame;
     }
@@ -564,10 +564,10 @@ int main(int argc, char* argv[])
     {
         switch(c)
         {
-            case 'n':
+            case 'p':
                 printAll = true;
                 break;
-            case 't':
+            case 'g':
                 waitForGUIConnection = true;
                 break;
         }
@@ -596,11 +596,9 @@ int main(int argc, char* argv[])
         return 1;
     }
     
-    NetCANOEMCANMsg helper;
+    NetCANOEMCANMsg helper{0x7F};
     
     CANframe canFrame;
-    
-    std::cout << "asking for transducer calibration matrix" << std::endl;
     
     canFrame = helper.getCANFrameRequest(NetCANOEMCANMsg::OpCode::SerialNumber_req);
     
@@ -608,7 +606,7 @@ int main(int argc, char* argv[])
     
     read(socketCan, &canFrame, sizeof(canFrame));
     
-    std::string serialNumber = "";
+    std::string serialNumber;
     
     serialNumber = helper.toSerial(canFrame);
     
@@ -776,7 +774,7 @@ int main(int argc, char* argv[])
     char recvMessage[1024];
     int maxBufferSize = 1024;
     
-    struct sockaddr_in serverAddr, clientAddr;
+    struct sockaddr_in serverAddr{}, clientAddr{};
     
     // Creating socket file descriptor
     if ((sockUDPCommunication = socket(AF_INET, SOCK_DGRAM, 0)) < 0 ) {
@@ -807,10 +805,10 @@ int main(int argc, char* argv[])
     len = sizeof(clientAddr);  //len is value/resuslt
     
     bool ok = true;
-    
-    
-    std::cout << "Server accepting " << inet_ntoa(serverAddr.sin_addr) << " at port " << htons(serverAddr.sin_port) << " waiting connection from client GUI interface." << std::endl << std::endl;
+
+
 #ifdef CONNECT_TO_KIVY_INTERFACE
+    std::cout << "Server accepting " << inet_ntoa(serverAddr.sin_addr) << " at port " << htons(serverAddr.sin_port) << " waiting connection from client GUI interface." << std::endl << std::endl;
     do
     {
         n = recvfrom(sockUDPCommunication, recvMessage, maxBufferSize,
@@ -892,10 +890,10 @@ int main(int argc, char* argv[])
     
         ft = multiply(matrix, sg);
     
-        //std::cout << "FT: ";
-        //std::for_each(ft.begin(), ft.end(), [](const float& v) { std::cout << std::setw(10) << std::setprecision(3) << v; });
+        std::cout << "FT: ";
+        std::for_each(ft.begin(), ft.end(), [](const float& v) { std::cout << std::setw(10) << std::setprecision(3) << v; });
         //std::cout << "\t\tpower supply low: " << sensorStatus.b05PowerSupplyLow;
-        //std::cout << std::endl;
+        std::cout << std::endl;
         
         ftDataJson["FT"] = {ft[0],
                             ft[1],
@@ -903,6 +901,7 @@ int main(int argc, char* argv[])
                             ft[3],
                             ft[4],
                             ft[5]};
+        
         ftDataJson["Status"] = { sensorStatus.b00WatchDogReset,
                                  sensorStatus.b01DAC_ADC_tooHigh,
                                  sensorStatus.b02DAC_ADC_tooLow,
