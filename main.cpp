@@ -20,531 +20,11 @@
 
 #include <cstdlib>
 
+#include "NetCANOEM_FTSensor.hpp"
+
 #undef CONNECT_TO_KIVY_INTERFACE
 
 using json = nlohmann::json;
-
-typedef struct can_frame CANframe;
-typedef struct ifreq InterfReq;
-typedef struct sockaddr_can SockAddrCan;
-typedef struct timeval TimeVal;
-
-void printCANFrame(const CANframe* frame)
-{
-    for(int i = 0; i < frame->can_dlc; i++)
-    {
-        std::cout << frame->data[i] << " ";
-    }
-    
-    std::cout << std::endl;
-}
-
-
-/// Responses are big-endian!
-/// https://www.ati-ia.com/app_content/documents/9610-05-1030.pdf
-class NetCANOEMCANMsg
-{
-public:
-    
-    enum OpCode
-    {
-        ///Read SG Data requisition
-        SGData_req = 0x0,
-        ///Read SG Data answer 1: status code (2 bytes), sg0 (2 bytes), sg2 (2 bytes) and sg4 (2 bytes)
-        SGData_ans1 = 0x0,
-        ///Read SG Data answer 2: sg1 (2 bytes), sg3 (2 bytes) and sg5 (2 bytes)
-        SGData_ans2 = 0x1,
-        ///Read Matrix requisition: 1 byte for the axis (0: Fx, 1: Fy, 2: Fz, 3: Tx, 4: Ty, 5: Tz)
-        Matrix_req = 0x2,
-        ///Read Matrix answer: SG0 (4 bytes) and SG1 (4 bytes)
-        Matrix_ans1 = 0x2,
-        ///Read Matrix answer: SG2 (4 bytes) and SG3 (4 bytes)
-        Matrix_ans2 = 0x3,
-        ///Read Matrix answer: SG4 (4 bytes) and SG5 (4 bytes)
-        Matrix_ans3 = 0x4,
-        ///Read Force/Torque Serial Number requisition
-        SerialNumber_req = 0x5,
-        ///Read Force/Torque Serial Number answer: 8 bytes with ASCI string serial number
-        SerialNumber_ans = 0x5,
-        ///Set active calibration requisition
-        SetActiveCalibration_req = 0x6,
-        ///Set active calibration answer: 1 byte echoing the selected calibration index
-        SetActiveCalibration_ans = 0x6,
-        ///Read Counts Per Unit requisition
-        CountsPerUnits_req = 0x7,
-        ///Read Counts Per Unit answer: 4 bytes for counts per force and 4 bytes for counts per torque
-        CountsPerUnits_ans = 0x7,
-        ///Read Unit Codes requisition
-        UnitCodes_req = 0x8,
-        ///Read Unit Codes answer:
-        /// 1 byte for Force unit code
-        ///     lbf     1
-        ///     N       2
-        ///     Klbf    3
-        ///     kN      4
-        ///     kgf     5
-        ///     gf      6
-        /// and 1 byte for torque unit code
-        ///     lbf-in  1
-        ///     lbf-ft  2
-        ///     N-m     3
-        ///     N-mm    4
-        ///     kgfcm   5
-        ///     kN-m    6
-        UnitCodes_ans = 0x8,
-        ///Read Diagnostic ADC Voltages requisition: 1 byte for diagnostic index (0: MID_VSG, 1: Unused, 2: Thermistor, 3: Power, 4: DAC, 5: Ground)
-        DiagADCVoltages_req = 0x9,
-        ///Read Diagnostic ADC Voltages answer: 2 bytes with requested ADC diagnostic
-        DiagADCVoltages_ans = 0x9,
-        ///Reset
-        Reset_req = 0xC,
-        ///Read Firmware Version requisition
-        FirmwareVersion_req = 0xF,
-        ///Read Firmware Version answer: 1 byte major version, 1 byte minor version, 2 bytes build number
-        FirmwareVersion_ans = 0xF,
-    };
-    
-    ///Status (2 bytes sent in SG Data Requitision?)
-    ///Bit  Critical?        Name                                        .Can occur after firmware-upgrade; replace NETCANOEM if this happens during normal operation
-    /// 0                    Watchdog Rest                               .
-    /// 1                    DAC/ADC check result too high               .
-    /// 2      Yes           DAC/ADC check result too high               .
-    /// 3      Yes           Artificial analog ground out of range       .
-    /// 4      Yes           Power supply too high                       .
-    /// 5      Yes           Power supply too low                        .
-    /// 6      Yes           Bad active calibration                      .
-    /// 7      Yes           EEPROM failure                              .
-    /// 8                    Configuration invalid                       .
-    /// 9                    Reserved                                    .
-    /// 10                   Reserved                                    .
-    /// 11     Yes           Sensor temperature too high                 .
-    /// 12     Yes           Sensor temperature too low                  .
-    /// 13                   Reserved                                    .
-    /// 14                   CAN bus error                               .
-    /// 15                   Any error causes this bit to turn on        .
-    
-    enum Axis
-    {
-        Fx = 0x0,
-        Fy = 0x1,
-        Fz = 0x2,
-        Tx = 0x3,
-        Ty = 0x4,
-        Tz = 0x5,
-    };
-    
-    explicit NetCANOEMCANMsg(uint16_t baseID = 0x7F): _baseIDRaw(baseID), _baseIDForUse(baseID << 4u)
-    {
-    }
-    
-    inline void setBaseID(uint16_t newBaseID)
-    {
-        _baseIDRaw = newBaseID;
-        _baseIDForUse = newBaseID << 4u;
-    }
-    
-    CANframe getCANFrameRequest(const OpCode opCode) const
-    {
-        CANframe canFrame;
-        canFrame.can_dlc = 0;
-        canFrame.can_id = _baseIDForUse | opCode;
-        
-        return canFrame;
-    }
-    
-    ///To get Matrix
-    CANframe getCANFrameRequest(const OpCode opCode, const Axis axis) const
-    {
-        CANframe canFrame = getCANFrameRequest(opCode);
-        canFrame.can_dlc = 1;
-        canFrame.data[0] = (int)axis;
-        
-        return canFrame;
-    }
-    
-    typedef uint16_t CalibrationIndex;
-    
-    ///To set calibration
-    CANframe getCANFrameRequest(const OpCode opCode, const CalibrationIndex calibration) const
-    {
-        if (calibration < 0 || calibration > 15)
-        {
-            throw std::runtime_error("Calibration must be in the range [0, 15]. Calibration requested:" + std::to_string(calibration));
-        }
-        
-        CANframe canFrame = getCANFrameRequest(opCode);
-        canFrame.can_dlc = 1;
-        canFrame.data[0] = calibration;
-    
-        return canFrame;
-    }
-    
-    enum DiagnosticADCVoltage
-    {
-        MID_VSG = 0x0,
-        //Unused = 0x1, //?!
-        Thermistor = 0x2,
-        Power = 0x3,
-        DAC = 0x4,
-        Ground = 0x5,
-    };
-    
-    ///To get ADC voltage diagnostic
-    CANframe getCANFrameRequest( const OpCode opCode, const DiagnosticADCVoltage diag) const
-    {
-        CANframe canFrame = getCANFrameRequest(opCode);
-        canFrame.can_dlc = 1;
-        canFrame.data[0] = diag;
-    
-        return canFrame;
-    };
-
-//    CANframe getCANFrameRequest(const OpCode opCode, const uint16_t newBaseID) const
-//    {
-//
-//    };
-
-//    enum BaudRate
-//    {
-//        BaudRate125000,
-//        BaudRate250000,
-//        BaudRate500000,
-//        BaudRate1000000,
-//        BaudRate2000000,
-//    };
-//    CANframe getCANFrameRequest(const OpCode opCode, const uint16_t baudRateDivisor) const
-//    {
-//
-//    };
-    
-    std::string toSerial(const CANframe& canFrame) const
-    {
-        if( canFrame.can_id != (_baseIDForUse | OpCode::SerialNumber_ans))
-        {
-            throw std::runtime_error("This is not a serial number answer frame!");
-        }
-        
-        std::stringstream ssSerial;
-        
-        for (int i = 0; i < canFrame.can_dlc; i++)
-        {
-            ssSerial << canFrame.data[i];
-        }
-        
-        return ssSerial.str();
-    }
-    
-    typedef struct
-    {
-        int major;
-        int minor;
-        int buildNumber;
-    } FirmwareVersion;
-    
-    FirmwareVersion toFirmwareVersion(const CANframe& canFrame) const
-    {
-        if( canFrame.can_id != (_baseIDForUse | OpCode::FirmwareVersion_ans))
-        {
-            throw std::runtime_error("This is not a firmware version answer frame!");
-        }
-        
-        return FirmwareVersion{canFrame.data[0], canFrame.data[1], ( canFrame.data[2] << 8u ) | canFrame.data[3]};
-    }
-    
-    int toCalibrationIndexSelected(const CANframe& canFrame) const
-    {
-        if( canFrame.can_id != (_baseIDForUse | OpCode::SetActiveCalibration_ans))
-        {
-            throw std::runtime_error("This is not a selected calibration index answer frame!");
-        }
-        return canFrame.data[0];
-    }
-    
-    typedef struct
-    {
-        float Force;
-        float Torque;
-    } CountsPerUnit;
-    
-    CountsPerUnit toCountsPerUnit(const CANframe& canFrame) const
-    {
-        if( canFrame.can_id != (_baseIDForUse | OpCode::CountsPerUnits_ans))
-        {
-            throw std::runtime_error("This is not a counts per unit answer frame!");
-        }
-        return CountsPerUnit{   (float)
-                                ((canFrame.data[0] << 24u) |
-                                (canFrame.data[1] << 16u) |
-                                (canFrame.data[2] << 8u)  |
-                                (canFrame.data[3])),
-                                (float)
-                                ((canFrame.data[4] << 24u) |
-                                (canFrame.data[5] << 16u) |
-                                (canFrame.data[6] << 8u)  |
-                                (canFrame.data[7]))};
-    }
-    
-    enum ForceUnit
-    {
-        lbf = 0x1,
-        N = 0x2,
-        Klbf = 0x3, //or klbf?
-        kN = 0x4,
-        kgf = 0x5,
-        gf = 0x6,
-    };
-    
-    enum TorqueUnit
-    {
-        lbf_in = 0x1,
-        lbf_ft = 0x2,
-        N_m = 0x3,
-        N_mm = 0x4,
-        kgf_cm = 0x5,
-        kN_m = 0x6,
-    };
-    
-    typedef struct
-    {
-        ForceUnit Force;
-        TorqueUnit Torque;
-    } ForceTorqueUnit;
-    
-    ForceTorqueUnit toForceTorqueUnit(const CANframe& canFrame) const
-    {
-        if( canFrame.can_id != (_baseIDForUse | OpCode::UnitCodes_ans))
-        {
-            throw std::runtime_error("This is not a force-torque unit answer frame!");
-        }
-        return ForceTorqueUnit {(ForceUnit)canFrame.data[0], (TorqueUnit)canFrame.data[1]};
-    }
-    
-    int toDiagnosticADCVoltage(const CANframe& canFrame) const
-    {
-        if( canFrame.can_id != (_baseIDForUse | OpCode::DiagADCVoltages_ans))
-        {
-            throw std::runtime_error("This is not a firmware version answer frame!");
-        }
-        return (( canFrame.data[0] << 8u) | canFrame.data[1] );
-    }
-    
-    typedef struct {
-        ///Bit 0
-        bool b00WatchDogReset;
-        ///Bit 1 - Critical
-        bool b01DAC_ADC_tooHigh;
-        ///Bit 2 - Critical
-        bool b02DAC_ADC_tooLow;
-        ///Bit 3 - Critical
-        bool b03ArtificialAnalogGroundOutOfRange;
-        ///Bit 4 - Critical
-        bool b04PowerSupplyHigh;
-        ///Bit 5 - Critical
-        bool b05PowerSupplyLow;
-        ///Bit 6 - Critical
-        bool b06BadActiveCalibration;
-        ///Bit 7 - Critical
-        bool b07EEPROMFailure;
-        ///Bit 8
-        bool b08ConfigurationInvalid;
-        //Bit 9
-        //bool Reserved;
-        //Bit 10
-        //bool Reserved;
-        ///Bit 11 - Critical
-        bool b11SensorTempHigh;
-        ///Bit 12 - Critical
-        bool b12SensorTempLow;
-        //Bit 13
-        //bool Reserved;
-        ///Bit 14
-        bool b14CANBusError;
-        ///Bit 15
-        bool b15AnyError;
-    } Status;
-    
-    Status toStatus(const CANframe& canFrame) const
-    {
-        if( canFrame.can_id != (_baseIDForUse | OpCode::SGData_ans1))
-        {
-            throw std::runtime_error("This is not a SG data first answer frame (this one has the status in its first 2 bytes)!");
-        }
-        
-        unsigned int status = ( canFrame.data[0] << 8u ) | canFrame.data[1];
-        
-        return Status{
-                static_cast<bool>(status >> 0u & 0x1),
-                static_cast<bool>(status >> 1u & 0x1),
-                static_cast<bool>(status >> 2u & 0x1),
-                static_cast<bool>(status >> 3u & 0x1),
-                static_cast<bool>(status >> 4u & 0x1),
-                static_cast<bool>(status >> 5u & 0x1),
-                static_cast<bool>(status >> 6u & 0x1),
-                static_cast<bool>(status >> 7u & 0x1),
-                static_cast<bool>(status >> 8u & 0x1),
-              //static_cast<bool>(status >> 9u & 0x1),
-              //static_cast<bool>(status >> 10u & 0x1),
-                static_cast<bool>(status >> 11u & 0x1),
-                static_cast<bool>(status >> 12u & 0x1),
-              //static_cast<bool>(status >> 13u & 0x1),
-                static_cast<bool>(status >> 14u & 0x1),
-                static_cast<bool>(status >> 15u),
-    
-        };
-        
-    }
-    
-    std::tuple<float, float> toMatrixElements(const CANframe &canFrame) const
-    {
-        if( canFrame.can_id != (_baseIDForUse | OpCode::Matrix_ans1) &&
-            canFrame.can_id != (_baseIDForUse | OpCode::Matrix_ans2) &&
-            canFrame.can_id != (_baseIDForUse | OpCode::Matrix_ans3) )
-        {
-            throw std::runtime_error("This is none of the matrix answer (1, 2 nor 3) frame!");
-        }
-        
-        std::tuple<float, float> ret;
-        int int0 = (canFrame.data[0] << 24u | canFrame.data[1] << 16u | canFrame.data[2] << 8u | canFrame.data[3]);
-        int int1 = (canFrame.data[4] << 24u | canFrame.data[5] << 16u | canFrame.data[6] << 8u | canFrame.data[7]);
-        
-        float float0;
-        float float1;
-        
-        memcpy(&float0, &int0, sizeof(float));
-        memcpy(&float1, &int1, sizeof(float));
-        
-        std::get<0>(ret) = float0;
-        std::get<1>(ret) = float1;
-        
-        return ret;
-    }
-    
-    template<typename T>
-    std::tuple<T, T, T> toSGData(const CANframe& canFrame) const
-    {
-        if( (canFrame.can_id != (_baseIDForUse | OpCode::SGData_ans1)) && (canFrame.can_id != (_baseIDForUse | OpCode::SGData_ans2)))
-        {
-            throw std::runtime_error("This is not a SG data answer frame!");
-        }
-        
-        std::tuple<T, T, T> ret;
-        
-        if( canFrame.can_id == (_baseIDForUse | OpCode::SGData_ans1) )
-        {
-            //TODO SHOULD BE FLOAT?!
-            std::get<0>(ret) = (T)((canFrame.data[2] << 8u) | canFrame.data[3]);
-            std::get<1>(ret) = (T)((canFrame.data[4] << 8u) | canFrame.data[5]);
-            std::get<2>(ret) = (T)((canFrame.data[6] << 8u) | canFrame.data[7]);
-        }
-        else if ( canFrame.can_id == (_baseIDForUse | OpCode::SGData_ans2) )
-        {
-            //TODO SHOULD BE FLOAT?!
-            std::get<0>(ret) = (T)((canFrame.data[0] << 8u) | canFrame.data[1]);
-            std::get<1>(ret) = (T)((canFrame.data[2] << 8u) | canFrame.data[3]);
-            std::get<2>(ret) = (T)((canFrame.data[4] << 8u) | canFrame.data[5]);
-        }
-        
-        return ret;
-    }
-
-private:
-    uint16_t _baseIDRaw;
-    uint16_t _baseIDForUse;
-};
-
-std::ostream &operator<<(std::ostream &os, NetCANOEMCANMsg::FirmwareVersion fwv)
-{
-    return os << "v" << fwv.major << "." << fwv.minor << "." << fwv.buildNumber;
-}
-
-std::ostream &operator<<(std::ostream &os, std::array<std::array<float,6>,6> matrix)
-{
-    for(std::array<float,6>& row : matrix)
-    {
-        os << "\t";
-        for(float& el : row)
-        {
-            os << std::setw(14) << el << "  ";
-        }
-        
-        os << std::endl;
-    }
-    
-    return os;
-}
-
-std::string forceUnitToStr(NetCANOEMCANMsg::ForceUnit fu)
-{
-    std::string ret;
-    
-    switch (fu)
-    {
-        case NetCANOEMCANMsg::ForceUnit::N:
-            ret = "N";
-            break;
-        case NetCANOEMCANMsg::ForceUnit::lbf:
-            ret = "lbf";
-            break;
-        case NetCANOEMCANMsg::ForceUnit::kN:
-            ret = "kN";
-            break;
-        case NetCANOEMCANMsg::ForceUnit::Klbf:
-            ret = "Klbf";
-            break;
-        case NetCANOEMCANMsg::ForceUnit::kgf:
-            ret = "kgf";
-            break;
-        case NetCANOEMCANMsg::ForceUnit::gf:
-            ret = "gf";
-            break;
-    }
-    
-    return ret;
-}
-
-std::string torqueUnitToStr(NetCANOEMCANMsg::TorqueUnit tu)
-{
-    std::string ret;
-    
-    switch (tu)
-    {
-        case NetCANOEMCANMsg::TorqueUnit::N_m:
-            ret = "N_m";
-            break;
-        case NetCANOEMCANMsg::TorqueUnit::N_mm:
-            ret = "N_mm";
-            break;
-        case NetCANOEMCANMsg::TorqueUnit::lbf_in:
-            ret = "lbf_in";
-            break;
-        case NetCANOEMCANMsg::TorqueUnit::lbf_ft:
-            ret = "lbf_ft";
-            break;
-        case NetCANOEMCANMsg::TorqueUnit::kN_m:
-            ret = "kN_m";
-            break;
-        case NetCANOEMCANMsg::TorqueUnit::kgf_cm:
-            ret = "kgf_cm";
-            break;
-    }
-    
-    return ret;
-}
-
-std::array<float, 6> multiply(const std::array<std::array<float, 6>, 6>& matrix, const std::array<int16_t, 6>& sg)
-{
-    std::array<float, 6> ret{};
-    
-    for(int row = 0; row < 6; row++)
-    {
-        for(int col = 0; col < 6; col++)
-        {
-            ret[row] += matrix[row][col] * sg[col];
-        }
-    }
-    
-    return ret;
-}
 
 int keepRunning = 1;
 
@@ -582,9 +62,9 @@ int main(int argc, char* argv[])
         return 1;
     }
     
-    SockAddrCan addr;
+    ati_ftsensor::SockAddrCan addr;
     
-    InterfReq ifr;
+    ati_ftsensor::InterfReq ifr;
     strcpy(ifr.ifr_name, "can1" );
     ioctl(socketCan, SIOCGIFINDEX, &ifr);
     
@@ -596,11 +76,11 @@ int main(int argc, char* argv[])
         return 1;
     }
     
-    NetCANOEMCANMsg helper{0x7F};
+    ati_ftsensor::NetCANOEM_FTSensor helper{0x7F};
     
-    CANframe canFrame;
+    ati_ftsensor::CANframe canFrame;
     
-    canFrame = helper.getCANFrameRequest(NetCANOEMCANMsg::OpCode::SerialNumber_req);
+    canFrame = helper.getCANFrameRequest(ati_ftsensor::OpCode::SerialNumber_req);
     
     write(socketCan, &canFrame, sizeof(canFrame));
     
@@ -614,7 +94,7 @@ int main(int argc, char* argv[])
     
     
     
-    canFrame = helper.getCANFrameRequest(NetCANOEMCANMsg::OpCode::FirmwareVersion_req);
+    canFrame = helper.getCANFrameRequest(ati_ftsensor::OpCode::FirmwareVersion_req);
     
     write(socketCan, &canFrame, sizeof(canFrame));
     
@@ -626,7 +106,7 @@ int main(int argc, char* argv[])
     
     
     
-    canFrame = helper.getCANFrameRequest(NetCANOEMCANMsg::OpCode::SetActiveCalibration_req, 0);
+    canFrame = helper.getCANFrameRequest(ati_ftsensor::OpCode::SetActiveCalibration_req, 1);
     
     write(socketCan, &canFrame, sizeof(canFrame));
     
@@ -638,7 +118,7 @@ int main(int argc, char* argv[])
     
     
     
-    canFrame = helper.getCANFrameRequest(NetCANOEMCANMsg::OpCode::CountsPerUnits_req);
+    canFrame = helper.getCANFrameRequest(ati_ftsensor::OpCode::CountsPerUnits_req);
     
     write(socketCan, &canFrame, sizeof(canFrame));
     
@@ -651,7 +131,7 @@ int main(int argc, char* argv[])
     
     
     
-    canFrame = helper.getCANFrameRequest(NetCANOEMCANMsg::OpCode::UnitCodes_req);
+    canFrame = helper.getCANFrameRequest(ati_ftsensor::OpCode::UnitCodes_req);
     
     write(socketCan, &canFrame, sizeof(canFrame));
     
@@ -664,7 +144,7 @@ int main(int argc, char* argv[])
     
     std::cout << "Diagnostic ADC voltages:" << std::endl;
     
-    canFrame = helper.getCANFrameRequest(NetCANOEMCANMsg::OpCode::DiagADCVoltages_req,NetCANOEMCANMsg::DiagnosticADCVoltage::MID_VSG);
+    canFrame = helper.getCANFrameRequest(ati_ftsensor::OpCode::DiagADCVoltages_req, ati_ftsensor::DiagnosticADCVoltage::MID_VSG);
     
     write(socketCan, &canFrame, sizeof(canFrame));
     
@@ -672,10 +152,13 @@ int main(int argc, char* argv[])
     
     int mid_vsg_volt = helper.toDiagnosticADCVoltage(canFrame);
     
-    std::cout << "\tMID_VSG voltage\t\t" << mid_vsg_volt << "V" << std::endl;
+    std::cout << "\tMID_VSG voltage (int32)\t\t" << mid_vsg_volt << "V" << std::endl;
+    std::cout << "\tMID_VSG voltage (int16)\t\t" << reinterpret_cast<int16_t &>(mid_vsg_volt) << "V" << std::endl;
+    std::cout << "\tMID_VSG voltage (uint16)\t\t" << reinterpret_cast<uint16_t &>(mid_vsg_volt) << "V" << std::endl;
+    std::cout << "\tMID_VSG voltage (float)\t\t" << reinterpret_cast<float&>(mid_vsg_volt) << "V" << std::endl;
     
     
-    canFrame = helper.getCANFrameRequest(NetCANOEMCANMsg::OpCode::DiagADCVoltages_req,NetCANOEMCANMsg::DiagnosticADCVoltage::Thermistor);
+    canFrame = helper.getCANFrameRequest(ati_ftsensor::OpCode::DiagADCVoltages_req,ati_ftsensor::DiagnosticADCVoltage::Thermistor);
     
     write(socketCan, &canFrame, sizeof(canFrame));
     
@@ -683,10 +166,13 @@ int main(int argc, char* argv[])
     
     int thermistor_volt = helper.toDiagnosticADCVoltage(canFrame);
     
-    std::cout << "\tThermistor voltage\t" << thermistor_volt << "V" << std::endl;
+    std::cout << "\tThermistor voltage (int32)\t" << thermistor_volt << "V" << std::endl;
+    std::cout << "\tThermistor voltage (int16)\t" << reinterpret_cast<int16_t&>(thermistor_volt) << "V" << std::endl;
+    std::cout << "\tThermistor voltage (uint16)\t" << reinterpret_cast<uint16_t&>(thermistor_volt) << "V" << std::endl;
+    std::cout << "\tThermistor voltage (float)\t" << reinterpret_cast<float&>(thermistor_volt) << "V" << std::endl;
     
     
-    canFrame = helper.getCANFrameRequest(NetCANOEMCANMsg::OpCode::DiagADCVoltages_req,NetCANOEMCANMsg::DiagnosticADCVoltage::Power);
+    canFrame = helper.getCANFrameRequest(ati_ftsensor::OpCode::DiagADCVoltages_req,ati_ftsensor::DiagnosticADCVoltage::Power);
     
     write(socketCan, &canFrame, sizeof(canFrame));
     
@@ -694,10 +180,13 @@ int main(int argc, char* argv[])
     
     int power_volt = helper.toDiagnosticADCVoltage(canFrame);
     
-    std::cout << "\tPower voltage\t\t" << power_volt << "V" << std::endl;
+    std::cout << "\tPower voltage (int32)\t\t" << power_volt << "V" << std::endl;
+    std::cout << "\tPower voltage (int16)\t\t" << reinterpret_cast<int16_t&>(power_volt) << "V" << std::endl;
+    std::cout << "\tPower voltage (uint16)\t\t" << reinterpret_cast<uint16_t &>(power_volt) << "V" << std::endl;
+    std::cout << "\tPower voltage (float)\t\t" << reinterpret_cast<float&>(power_volt) << "V" << std::endl;
     
     
-    canFrame = helper.getCANFrameRequest(NetCANOEMCANMsg::OpCode::DiagADCVoltages_req,NetCANOEMCANMsg::DiagnosticADCVoltage::DAC);
+    canFrame = helper.getCANFrameRequest(ati_ftsensor::OpCode::DiagADCVoltages_req,ati_ftsensor::DiagnosticADCVoltage::DAC);
     
     write(socketCan, &canFrame, sizeof(canFrame));
     
@@ -705,10 +194,13 @@ int main(int argc, char* argv[])
     
     int dac_volt = helper.toDiagnosticADCVoltage(canFrame);
     
-    std::cout << "\tDAC voltage\t\t\t" << dac_volt << "V" << std::endl;
+    std::cout << "\tDAC voltage (int32)\t\t\t" << dac_volt << "V" << std::endl;
+    std::cout << "\tDAC voltage (int16)\t\t\t" << reinterpret_cast<int16_t &>(dac_volt) << "V" << std::endl;
+    std::cout << "\tDAC voltage (uint16)\t\t\t" << reinterpret_cast<uint16_t &>(dac_volt) << "V" << std::endl;
+    std::cout << "\tDAC voltage (float)\t\t\t" << reinterpret_cast<float&>(dac_volt) << "V" << std::endl;
     
     
-    canFrame = helper.getCANFrameRequest(NetCANOEMCANMsg::OpCode::DiagADCVoltages_req,NetCANOEMCANMsg::DiagnosticADCVoltage::Ground);
+    canFrame = helper.getCANFrameRequest(ati_ftsensor::OpCode::DiagADCVoltages_req,ati_ftsensor::DiagnosticADCVoltage::Ground);
     
     write(socketCan, &canFrame, sizeof(canFrame));
     
@@ -716,7 +208,10 @@ int main(int argc, char* argv[])
     
     int ground_volt = helper.toDiagnosticADCVoltage(canFrame);
     
-    std::cout << "\tGround voltage\t\t" << ground_volt << "V" << std::endl;
+    std::cout << "\tGround voltage (int32)\t\t" << ground_volt << "V" << std::endl;
+    std::cout << "\tGround voltage (int16)\t\t" << reinterpret_cast<int16_t&>(ground_volt) << "V" << std::endl;
+    std::cout << "\tGround voltage (uint16)\t\t" << reinterpret_cast<u_int16_t &>(ground_volt) << "V" << std::endl;
+    std::cout << "\tGround voltage (int32)\t\t" << reinterpret_cast<float&>(ground_volt) << "V" << std::endl;
     
     std::cout << std::endl << std::endl << "\t\tCOMO SE LÊ ESTA CARAIA?!" << std::endl << std::endl << std::endl ;
     
@@ -734,7 +229,7 @@ int main(int argc, char* argv[])
     for(int row = 0; row < 6; row++)
     {
     
-        canFrame = helper.getCANFrameRequest(NetCANOEMCANMsg::OpCode::Matrix_req, (NetCANOEMCANMsg::Axis)row);
+        canFrame = helper.getCANFrameRequest(ati_ftsensor::OpCode::Matrix_req, (ati_ftsensor::Axis)row);
     
         write(socketCan, &canFrame, sizeof(canFrame));
         
@@ -859,13 +354,13 @@ int main(int argc, char* argv[])
     ftDataJson["Last_message"] = "False";
     ftDataJson["SGcount"] =  SGcount;
     
-    NetCANOEMCANMsg::Status sensorStatus{};
+    ati_ftsensor::Status sensorStatus{};
     
     
     /*begin select setup*/
     
     fd_set rfds;
-    TimeVal tv;
+    ati_ftsensor::TimeVal tv;
     int retval;
     /*end select setup*/
     
@@ -874,7 +369,7 @@ int main(int argc, char* argv[])
     while(keepRunning == 1)
     {
     
-        canFrame = helper.getCANFrameRequest(NetCANOEMCANMsg::OpCode::SGData_req);
+        canFrame = helper.getCANFrameRequest(ati_ftsensor::OpCode::SGData_req);
     
         write(socketCan, &canFrame, sizeof(canFrame));
     
@@ -888,7 +383,7 @@ int main(int argc, char* argv[])
     
         std::tie(sg[1], sg[3], sg[5]) = helper.toSGData<int16_t>(canFrame);
     
-        ft = multiply(matrix, sg);
+        ft = ati_ftsensor::multiply(matrix, sg);
     
         std::cout << "FT: ";
         std::for_each(ft.begin(), ft.end(), [](const float& v) { std::cout << std::setw(10) << std::setprecision(3) << v; });
