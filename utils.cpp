@@ -104,5 +104,4 @@ namespace ati_ftsensor {
         
         return ret;
     }
-    
 }

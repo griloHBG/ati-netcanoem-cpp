@@ -86,14 +86,16 @@ namespace ati_ftsensor {
     /// 14                   CAN bus error                               .
     /// 15                   Any error causes this bit to turn on        .
     
-    enum Axis {
-        Fx = 0x0,
-        Fy = 0x1,
-        Fz = 0x2,
-        Tx = 0x3,
-        Ty = 0x4,
-        Tz = 0x5,
+    struct _a {
+        static const int Fx = 0x0;
+        static const int Fy = 0x1;
+        static const int Fz = 0x2;
+        static const int Tx = 0x3;
+        static const int Ty = 0x4;
+        static const int Tz = 0x5;
     };
+    
+    using Axis = struct _a;
     
     typedef struct {
         int major;
@@ -187,6 +189,8 @@ namespace ati_ftsensor {
     std::string torqueUnitToStr(TorqueUnit tu);
     
     std::array<float, 6> multiply(const std::array<std::array<float, 6>, 6>& matrix, const std::array<int16_t, 6>& sg);
+    
+    constexpr Axis intToAxis(int a);
 }
 
 std::ostream& operator<<(std::ostream &os, std::array<std::array<float, 6>, 6> matrix);

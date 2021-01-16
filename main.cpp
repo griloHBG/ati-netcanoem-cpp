@@ -76,11 +76,11 @@ int main(int argc, char* argv[])
         return 1;
     }
     
-    ati_ftsensor::NetCANOEM_FTSensor helper{0x7F};
+    ati_ftsensor::NetCANOEM_FTSensor<> helper;
     
     ati_ftsensor::CANframe canFrame;
     
-    canFrame = helper.getCANFrameRequest(ati_ftsensor::OpCode::SerialNumber_req);
+    canFrame = helper.getCANFrameRequest<ati_ftsensor::OpCode::SerialNumber_req>();
     
     write(socketCan, &canFrame, sizeof(canFrame));
     
@@ -94,7 +94,7 @@ int main(int argc, char* argv[])
     
     
     
-    canFrame = helper.getCANFrameRequest(ati_ftsensor::OpCode::FirmwareVersion_req);
+    canFrame = helper.getCANFrameRequest<ati_ftsensor::OpCode::FirmwareVersion_req>();
     
     write(socketCan, &canFrame, sizeof(canFrame));
     
@@ -106,7 +106,7 @@ int main(int argc, char* argv[])
     
     
     
-    canFrame = helper.getCANFrameRequest(ati_ftsensor::OpCode::SetActiveCalibration_req, 1);
+    canFrame = helper.getCANFrameRequest<ati_ftsensor::OpCode::SetActiveCalibration_req, 1>();
     
     write(socketCan, &canFrame, sizeof(canFrame));
     
@@ -118,7 +118,7 @@ int main(int argc, char* argv[])
     
     
     
-    canFrame = helper.getCANFrameRequest(ati_ftsensor::OpCode::CountsPerUnits_req);
+    canFrame = helper.getCANFrameRequest<ati_ftsensor::OpCode::CountsPerUnits_req>();
     
     write(socketCan, &canFrame, sizeof(canFrame));
     
@@ -131,7 +131,7 @@ int main(int argc, char* argv[])
     
     
     
-    canFrame = helper.getCANFrameRequest(ati_ftsensor::OpCode::UnitCodes_req);
+    canFrame = helper.getCANFrameRequest<ati_ftsensor::OpCode::UnitCodes_req>();
     
     write(socketCan, &canFrame, sizeof(canFrame));
     
@@ -144,7 +144,7 @@ int main(int argc, char* argv[])
     
     std::cout << "Diagnostic ADC voltages:" << std::endl;
     
-    canFrame = helper.getCANFrameRequest(ati_ftsensor::OpCode::DiagADCVoltages_req, ati_ftsensor::DiagnosticADCVoltage::MID_VSG);
+    canFrame = helper.getCANFrameRequest<ati_ftsensor::OpCode::DiagADCVoltages_req, ati_ftsensor::DiagnosticADCVoltage::MID_VSG>();
     
     write(socketCan, &canFrame, sizeof(canFrame));
     
@@ -158,7 +158,7 @@ int main(int argc, char* argv[])
     std::cout << "\tMID_VSG voltage (float)\t\t" << reinterpret_cast<float&>(mid_vsg_volt) << "V" << std::endl;
     
     
-    canFrame = helper.getCANFrameRequest(ati_ftsensor::OpCode::DiagADCVoltages_req,ati_ftsensor::DiagnosticADCVoltage::Thermistor);
+    canFrame = helper.getCANFrameRequest<ati_ftsensor::OpCode::DiagADCVoltages_req,ati_ftsensor::DiagnosticADCVoltage::Thermistor>();
     
     write(socketCan, &canFrame, sizeof(canFrame));
     
@@ -172,7 +172,7 @@ int main(int argc, char* argv[])
     std::cout << "\tThermistor voltage (float)\t" << reinterpret_cast<float&>(thermistor_volt) << "V" << std::endl;
     
     
-    canFrame = helper.getCANFrameRequest(ati_ftsensor::OpCode::DiagADCVoltages_req,ati_ftsensor::DiagnosticADCVoltage::Power);
+    canFrame = helper.getCANFrameRequest<ati_ftsensor::OpCode::DiagADCVoltages_req,ati_ftsensor::DiagnosticADCVoltage::Power>();
     
     write(socketCan, &canFrame, sizeof(canFrame));
     
@@ -186,7 +186,7 @@ int main(int argc, char* argv[])
     std::cout << "\tPower voltage (float)\t\t" << reinterpret_cast<float&>(power_volt) << "V" << std::endl;
     
     
-    canFrame = helper.getCANFrameRequest(ati_ftsensor::OpCode::DiagADCVoltages_req,ati_ftsensor::DiagnosticADCVoltage::DAC);
+    canFrame = helper.getCANFrameRequest<ati_ftsensor::OpCode::DiagADCVoltages_req,ati_ftsensor::DiagnosticADCVoltage::DAC>();
     
     write(socketCan, &canFrame, sizeof(canFrame));
     
@@ -200,7 +200,7 @@ int main(int argc, char* argv[])
     std::cout << "\tDAC voltage (float)\t\t\t" << reinterpret_cast<float&>(dac_volt) << "V" << std::endl;
     
     
-    canFrame = helper.getCANFrameRequest(ati_ftsensor::OpCode::DiagADCVoltages_req,ati_ftsensor::DiagnosticADCVoltage::Ground);
+    canFrame = helper.getCANFrameRequest<ati_ftsensor::OpCode::DiagADCVoltages_req, ati_ftsensor::DiagnosticADCVoltage::Ground>();
     
     write(socketCan, &canFrame, sizeof(canFrame));
     
@@ -229,7 +229,7 @@ int main(int argc, char* argv[])
     for(int row = 0; row < 6; row++)
     {
     
-        canFrame = helper.getCANFrameRequest(ati_ftsensor::OpCode::Matrix_req, (ati_ftsensor::Axis)row);
+        canFrame = helper.getCANFrameRequest<ati_ftsensor::OpCode::Matrix_req, ati_ftsensor::Axis::Fx>();
     
         write(socketCan, &canFrame, sizeof(canFrame));
         
@@ -369,7 +369,7 @@ int main(int argc, char* argv[])
     while(keepRunning == 1)
     {
     
-        canFrame = helper.getCANFrameRequest(ati_ftsensor::OpCode::SGData_req);
+        canFrame = helper.getCANFrameRequest<ati_ftsensor::OpCode::SGData_req>();
     
         write(socketCan, &canFrame, sizeof(canFrame));
     
