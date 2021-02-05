@@ -106,7 +106,7 @@ int main(int argc, char* argv[])
     
     
     
-    canFrame = helper.getCANFrameRequest(ati_ftsensor::OpCode::SetActiveCalibration_req, 1);
+    canFrame = helper.getCANFrameRequest(ati_ftsensor::OpCode::SetActiveCalibration_req, 0);
     
     write(socketCan, &canFrame, sizeof(canFrame));
     
