@@ -67,35 +67,35 @@ namespace ati_ftsensor {
         FirmwareVersion_ans = 0xF,
     };
     
-    ///Status (2 bytes sent in SG Data Requitision?)
-    ///Bit  Critical?        Name                                        .Can occur after firmware-upgrade; replace NETCANOEM if this happens during normal operation
-    /// 0                    Watchdog Rest                               .
-    /// 1                    DAC/ADC check result too high               .
-    /// 2      Yes           DAC/ADC check result too high               .
-    /// 3      Yes           Artificial analog ground out of range       .
-    /// 4      Yes           Power supply too high                       .
-    /// 5      Yes           Power supply too low                        .
-    /// 6      Yes           Bad active calibration                      .
-    /// 7      Yes           EEPROM failure                              .
-    /// 8                    Configuration invalid                       .
-    /// 9                    Reserved                                    .
-    /// 10                   Reserved                                    .
-    /// 11     Yes           Sensor temperature too high                 .
-    /// 12     Yes           Sensor temperature too low                  .
-    /// 13                   Reserved                                    .
-    /// 14                   CAN bus error                               .
-    /// 15                   Any error causes this bit to turn on        .
+    //Status (2 bytes sent in SG Data Requitision?)
+    //Bit  Critical?        Name                                        .Can occur after firmware-upgrade; replace NETCANOEM if this happens during normal operation
+    // 0                    Watchdog Rest                               .
+    // 1                    DAC/ADC check result too high               .
+    // 2      Yes           DAC/ADC check result too high               .
+    // 3      Yes           Artificial analog ground out of range       .
+    // 4      Yes           Power supply too high                       .
+    // 5      Yes           Power supply too low                        .
+    // 6      Yes           Bad active calibration                      .
+    // 7      Yes           EEPROM failure                              .
+    // 8                    Configuration invalid                       .
+    // 9                    Reserved                                    .
+    // 10                   Reserved                                    .
+    // 11     Yes           Sensor temperature too high                 .
+    // 12     Yes           Sensor temperature too low                  .
+    // 13                   Reserved                                    .
+    // 14                   CAN bus error                               .
+    // 15                   Any error causes this bit to turn on        .
     
-    struct _a {
-        static const int Fx = 0x0;
-        static const int Fy = 0x1;
-        static const int Fz = 0x2;
-        static const int Tx = 0x3;
-        static const int Ty = 0x4;
-        static const int Tz = 0x5;
+    
+    /// Axis Enumeration: Fx, Fy, Fz, Tx, Ty, Tz
+    enum class Axis {
+        Fx = 0x0,
+        Fy = 0x1,
+        Fz = 0x2,
+        Tx = 0x3,
+        Ty = 0x4,
+        Tz = 0x5,
     };
-    
-    using Axis = struct _a;
     
     typedef struct {
         int major;
@@ -143,14 +143,14 @@ namespace ati_ftsensor {
     typedef struct ifreq InterfReq;
     typedef struct sockaddr_can SockAddrCan;
     typedef struct timeval TimeVal;
-    typedef uint16_t CalibrationIndex;
+    typedef uint8_t CalibrationIndex;
     
     typedef struct {
         float Force;
         float Torque;
     } CountsPerUnit;
     
-    enum DiagnosticADCVoltage {
+    enum class DiagnosticADCVoltage {
         MID_VSG = 0x0,
         //Unused = 0x1, //?!
         Thermistor = 0x2,

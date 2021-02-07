@@ -23,6 +23,7 @@
 #include "NetCANOEM_FTSensor.hpp"
 
 #undef CONNECT_TO_KIVY_INTERFACE
+#define CONNECT_TO_KIVY_INTERFACE
 
 using json = nlohmann::json;
 
@@ -106,7 +107,7 @@ int main(int argc, char* argv[])
     
     
     
-    canFrame = helper.getCANFrameRequest<ati_ftsensor::OpCode::SetActiveCalibration_req, 1>();
+    canFrame = helper.getCANFrameRequest<ati_ftsensor::OpCode::SetActiveCalibration_req, 0>();
     
     write(socketCan, &canFrame, sizeof(canFrame));
     
@@ -215,7 +216,6 @@ int main(int argc, char* argv[])
     
     std::cout << std::endl << std::endl << "\t\tCOMO SE LÊ ESTA CARAIA?!" << std::endl << std::endl << std::endl ;
     
-    
     std::cout << "Reading Matrix" << std::endl;
     
     /// [[FxSG0, FxSG1, FxSG2, FxSG3, FxSG4, FxSG5],
@@ -228,8 +228,28 @@ int main(int argc, char* argv[])
     
     for(int row = 0; row < 6; row++)
     {
-    
-        canFrame = helper.getCANFrameRequest<ati_ftsensor::OpCode::Matrix_req, ati_ftsensor::Axis::Fx>();
+        switch(row) {
+            case 0:
+                canFrame = helper.getCANFrameRequest<ati_ftsensor::OpCode::Matrix_req,ati_ftsensor::Axis::Fx>();
+                break;
+            case 1:
+                canFrame = helper.getCANFrameRequest<ati_ftsensor::OpCode::Matrix_req,ati_ftsensor::Axis::Fy>();
+                break;
+            case 2:
+                canFrame = helper.getCANFrameRequest<ati_ftsensor::OpCode::Matrix_req,ati_ftsensor::Axis::Fz>();
+                break;
+            case 3:
+                canFrame = helper.getCANFrameRequest<ati_ftsensor::OpCode::Matrix_req,ati_ftsensor::Axis::Tx>();
+                break;
+            case 4:
+                canFrame = helper.getCANFrameRequest<ati_ftsensor::OpCode::Matrix_req,ati_ftsensor::Axis::Ty>();
+                break;
+            case 5:
+                canFrame = helper.getCANFrameRequest<ati_ftsensor::OpCode::Matrix_req,ati_ftsensor::Axis::Tz>();
+                break;
+            default:
+                throw std::runtime_error("Axis " + std::to_string(row) + " doesn't exists!");
+        }
     
         write(socketCan, &canFrame, sizeof(canFrame));
         
